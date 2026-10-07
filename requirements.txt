@@ -12,3 +12,7 @@ tenacity>=8.5,<10.0
 
 # Carga de variables de entorno desde .env
 python-dotenv>=1.0,<2.0
+
+# API (Fase 2)
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
