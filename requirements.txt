@@ -1,0 +1,14 @@
+# Embeddings (OpenAI)
+openai>=1.40,<2.0
+
+# Base de datos vectorial (Supabase / pgvector)
+supabase>=2.5,<3.0
+
+# Lectura de PDFs
+pypdf>=4.2,<6.0
+
+# Reintentos con backoff exponencial para llamadas a APIs externas
+tenacity>=8.5,<10.0
+
+# Carga de variables de entorno desde .env
+python-dotenv>=1.0,<2.0
