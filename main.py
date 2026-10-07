@@ -11,7 +11,8 @@ Ejecutar:
     uvicorn main:app --reload
 
 Variables de entorno (ver .env.example):
-    OPENAI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY
+    SUPABASE_URL, SUPABASE_SERVICE_KEY y la clave del proveedor (OPENAI_API_KEY o
+    GEMINI_API_KEY según LLM_PROVIDER; ver llm_config.py)
     ESCALATION_WEBHOOK_URL (opcional)
 """
 from __future__ import annotations
@@ -34,6 +35,7 @@ from pydantic import BaseModel, Field
 from supabase import Client, create_client
 
 from escalation import notify_human_agent
+from llm_config import CHAT_MODEL, EMBEDDING_DIM, EMBEDDING_MODEL, SIMILARITY_THRESHOLD, client_kwargs
 from tools import TOOLS, ToolContext, execute_tool
 
 # --------------------------------------------------------------------------- #
@@ -41,10 +43,7 @@ from tools import TOOLS, ToolContext, execute_tool
 # --------------------------------------------------------------------------- #
 load_dotenv()  # antes de leer las variables de abajo, que se evalúan al importar el módulo
 
-EMBEDDING_MODEL = "text-embedding-3-small"  # debe coincidir con ingest.py
-CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o")
 TOP_K = 3                      # fragmentos a recuperar
-SIMILARITY_THRESHOLD = 0.75    # por debajo de este score el fragmento se descarta
 ESCALATE_ON_LOW_CONFIDENCE = os.getenv("ESCALATE_ON_LOW_CONFIDENCE", "true").lower() == "true"
 HISTORY_MAX_TURNS = 5          # turnos (usuario+asistente) que se envían al modelo
 MAX_SESSIONS = 1000            # sesiones en memoria antes de expulsar la más antigua
@@ -145,7 +144,9 @@ class Chunk:
 
 
 async def embed_query(openai_client: AsyncOpenAI, text: str) -> list[float]:
-    response = await openai_client.embeddings.create(model=EMBEDDING_MODEL, input=text)
+    response = await openai_client.embeddings.create(
+        model=EMBEDDING_MODEL, input=text, dimensions=EMBEDDING_DIM
+    )
     return response.data[0].embedding
 
 
@@ -224,7 +225,7 @@ async def generate_answer(
         })
         for call in reply.tool_calls:
             result = await execute_tool(call.function.name, call.function.arguments, ctx)
-            messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+            messages.append({"role": "tool", "tool_call_id": call.id, "name": call.function.name, "content": result})
     return NO_INFO_MESSAGE  # inalcanzable: la última ronda no admite tool_calls
 
 
@@ -241,7 +242,7 @@ def require_env(name: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Crea los clientes una sola vez al arrancar y los comparte vía app.state."""
-    app.state.openai = AsyncOpenAI(api_key=require_env("OPENAI_API_KEY"))
+    app.state.openai = AsyncOpenAI(**client_kwargs())
     app.state.supabase = create_client(
         require_env("SUPABASE_URL"), require_env("SUPABASE_SERVICE_KEY")
     )
