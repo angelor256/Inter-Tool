@@ -86,7 +86,7 @@ pip install pytest
 python -m pytest tests
 ```
 
-Debe terminar con **`14 passed`**. Si pasa, el código y el entorno están bien. Si falla, copia el error y revísalo antes de seguir.
+Debe terminar con **`15 passed`**. Si pasa, el código y el entorno están bien. Si falla, copia el error y revísalo antes de seguir.
 
 ---
 

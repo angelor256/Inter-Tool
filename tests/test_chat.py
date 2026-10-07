@@ -174,3 +174,18 @@ def test_widget_is_served_at_root(client):
     r = client.get("/")
     assert r.status_code == 200 and "text/html" in r.headers["content-type"]
     assert "/api/chat" in r.text and "escalation-banner" in r.text
+
+
+def test_dotenv_is_loaded_before_config_is_read(tmp_path):
+    """Regresión: las variables del .env deben afectar a las constantes de main.py."""
+    import subprocess, sys, textwrap
+    (tmp_path / ".env").write_text("ESCALATE_ON_LOW_CONFIDENCE=false\nOPENAI_CHAT_MODEL=modelo-x\n")
+    code = textwrap.dedent(f"""
+        import sys; sys.path.insert(0, {str(__import__('pathlib').Path(main.__file__).parent)!r})
+        import main
+        print(main.ESCALATE_ON_LOW_CONFIDENCE, main.CHAT_MODEL)
+    """)
+    out = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True,
+                         env={k: v for k, v in __import__("os").environ.items()
+                              if k not in ("ESCALATE_ON_LOW_CONFIDENCE", "OPENAI_CHAT_MODEL")})
+    assert out.stdout.strip() == "False modelo-x", out.stderr
