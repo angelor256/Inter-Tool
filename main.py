@@ -23,9 +23,12 @@ import sys
 from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from openai import AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, Field
 from supabase import Client, create_client
@@ -246,6 +249,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Support Bot RAG", lifespan=lifespan)
+
+# CORS solo si el widget se incrusta en OTRO dominio: CORS_ORIGINS="https://mitienda.com,https://www.mitienda.com"
+_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_methods=["POST"], allow_headers=["Content-Type"])
+
+
+@app.get("/", include_in_schema=False)
+def widget() -> FileResponse:
+    """Sirve el widget de chat (Fase 4) desde la misma origen que la API."""
+    return FileResponse(Path(__file__).with_name("index.html"))
 
 
 @app.post("/api/chat", response_model=ChatResponse)
