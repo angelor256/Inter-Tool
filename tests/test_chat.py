@@ -23,6 +23,7 @@ class FakeOpenAI:
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._complete))
 
     async def _embed(self, **kw):
+        self.embed_kwargs = kw
         return SimpleNamespace(data=[SimpleNamespace(embedding=[0.0] * 1536)])
 
     async def _complete(self, **kw):
@@ -58,6 +59,8 @@ def client(monkeypatch):
     monkeypatch.setattr(main, "notify_human_agent", fake_notify)
     monkeypatch.setattr(main, "create_client", lambda *a: FakeSupabase([0.9, 0.8, 0.5]))
     monkeypatch.setattr(main, "AsyncOpenAI", lambda **kw: FakeOpenAI())
+    monkeypatch.setattr(main, "SIMILARITY_THRESHOLD", 0.75)
+    monkeypatch.setattr(main, "client_kwargs", lambda: {"api_key": "x"})  # independiente del .env real
     with TestClient(main.app) as c:
         c.notified = notified
         yield c
@@ -178,6 +181,8 @@ def test_widget_is_served_at_root(client):
 
 def test_dotenv_is_loaded_before_config_is_read(tmp_path):
     """Regresión: las variables del .env deben afectar a las constantes de main.py."""
+    if (__import__("pathlib").Path(main.__file__).parent / ".env").exists():
+        pytest.skip("hay un .env real en el proyecto; el test usaría ese en lugar del temporal")
     import subprocess, sys, textwrap
     (tmp_path / ".env").write_text("ESCALATE_ON_LOW_CONFIDENCE=false\nOPENAI_CHAT_MODEL=modelo-x\n")
     code = textwrap.dedent(f"""
@@ -189,3 +194,39 @@ def test_dotenv_is_loaded_before_config_is_read(tmp_path):
                          env={k: v for k, v in __import__("os").environ.items()
                               if k not in ("ESCALATE_ON_LOW_CONFIDENCE", "OPENAI_CHAT_MODEL")})
     assert out.stdout.strip() == "False modelo-x", out.stderr
+
+
+# --- Proveedor de IA (OpenAI / Gemini) -------------------------------------
+def _run_config(tmp_path, env):
+    import os, subprocess, sys
+    repo = str(__import__("pathlib").Path(main.__file__).parent)
+    # Vaciamos (no borramos) las variables: así un .env real del proyecto no puede colarse en el test.
+    names = ("LLM_PROVIDER", "LLM_BASE_URL", "EMBEDDING_MODEL", "CHAT_MODEL", "SIMILARITY_THRESHOLD",
+             "OPENAI_CHAT_MODEL", "GEMINI_API_KEY", "OPENAI_API_KEY")
+    clean = {**os.environ, **{k: "" for k in names}}
+    code = (f"import sys; sys.path.insert(0, {repo!r}); import llm_config as c; "
+            "print(c.BASE_URL, c.EMBEDDING_MODEL, c.CHAT_MODEL, c.SIMILARITY_THRESHOLD, c.client_kwargs().get('api_key'))")
+    return subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True,
+                          env={**clean, **env})
+
+
+def test_gemini_preset(tmp_path):
+    out = _run_config(tmp_path, {"LLM_PROVIDER": "gemini", "GEMINI_API_KEY": "g-key"})
+    assert out.stdout.split() == ["https://generativelanguage.googleapis.com/v1beta/openai/",
+                                  "gemini-embedding-001", "gemini-2.5-flash", "0.65", "g-key"], out.stderr
+
+
+def test_openai_is_default_and_overrides_work(tmp_path):
+    out = _run_config(tmp_path, {"OPENAI_API_KEY": "o-key", "CHAT_MODEL": "gpt-4o-mini", "SIMILARITY_THRESHOLD": "0.5"})
+    assert out.stdout.split() == ["None", "text-embedding-3-small", "gpt-4o-mini", "0.5", "o-key"], out.stderr
+
+
+def test_invalid_provider_and_missing_key_exit(tmp_path):
+    assert _run_config(tmp_path, {"LLM_PROVIDER": "foo"}).returncode != 0
+    out = _run_config(tmp_path, {"LLM_PROVIDER": "gemini"})  # sin GEMINI_API_KEY
+    assert out.returncode != 0 and "GEMINI_API_KEY" in out.stderr
+
+
+def test_embeddings_request_fixed_dimensions(client):
+    post(client)
+    assert client.app.state.openai.embed_kwargs["dimensions"] == 1536

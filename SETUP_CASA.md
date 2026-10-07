@@ -8,7 +8,8 @@ Esta guía te lleva de cero a tener el bot funcionando en tu computadora. Sigue 
 |---|---|
 | `sql/schema.sql` | Crea la tabla y la función de búsqueda en Supabase (**ya lo ejecutaste**). |
 | `ingest.py` | Lee tus documentos (.txt, .md, .pdf), los parte en fragmentos y los guarda en Supabase con sus embeddings. |
-| `main.py` | La API: recibe mensajes, busca en Supabase, pregunta a GPT-4o y responde. También sirve el widget en `/`. |
+| `llm_config.py` | Elige el proveedor de IA (Gemini u OpenAI) según el `.env`. |
+| `main.py` | La API: recibe mensajes, busca en Supabase, pregunta al modelo de IA y responde. También sirve el widget en `/`. |
 | `tools.py` | Herramientas que el bot puede usar (consultar pedido, escalar a humano). Los pedidos son **datos de ejemplo**. |
 | `escalation.py` | Envía el aviso (webhook) cuando se escala a un humano. |
 | `index.html` | El widget de chat flotante. |
@@ -23,7 +24,9 @@ Necesitas:
 
 - **Git**: git-scm.com
 - **Python 3.10 o superior**: python.org (en Windows marca *"Add Python to PATH"* al instalar)
-- **Una cuenta de OpenAI con saldo**: platform.openai.com → Billing. Sin saldo, las llamadas fallan.
+- **Una clave de API de IA.** Tienes dos opciones:
+  - **Gemini (gratis, recomendado para probar):** entra en **aistudio.google.com** con tu cuenta de Google → **Get API key** → *Create API key*. No pide tarjeta.
+  - **OpenAI (de pago):** platform.openai.com → Billing → carga saldo (tu cuenta gratis de ChatGPT **no** da acceso a la API).
 - **El proyecto de Supabase** donde ya ejecutaste `schema.sql`.
 
 Comprueba en la terminal:
@@ -86,7 +89,7 @@ pip install pytest
 python -m pytest tests
 ```
 
-Debe terminar con **`15 passed`**. Si pasa, el código y el entorno están bien. Si falla, copia el error y revísalo antes de seguir.
+Debe terminar con **`19 passed`**. Si pasa, el código y el entorno están bien. Si falla, copia el error y revísalo antes de seguir.
 
 ---
 
@@ -97,25 +100,29 @@ Copia el ejemplo:
 - **Windows:** `copy .env.example .env`
 - **Mac/Linux:** `cp .env.example .env`
 
-Abre `.env` con el Bloc de notas y rellénalo así (sin comillas ni espacios alrededor del `=`):
+Abre `.env` con el Bloc de notas y rellénalo así (sin comillas ni espacios alrededor del `=`). Ejemplo con **Gemini**:
 
 ```
-OPENAI_API_KEY=sk-...
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=AIza...
 SUPABASE_URL=https://xxxxxxxx.supabase.co
 SUPABASE_SERVICE_KEY=eyJ...
-ESCALATION_WEBHOOK_URL=
-CORS_ORIGINS=
 ```
+
+Si prefieres **OpenAI**, pon `LLM_PROVIDER=openai` y rellena `OPENAI_API_KEY=sk-...` en su lugar. Solo necesitas la clave del proveedor que elijas.
 
 Dónde sacar cada valor:
 
 | Variable | Dónde |
 |---|---|
-| `OPENAI_API_KEY` | platform.openai.com → API keys → Create new secret key |
+| `GEMINI_API_KEY` | aistudio.google.com → Get API key |
+| `OPENAI_API_KEY` | platform.openai.com → API keys → Create new secret key (solo si usas OpenAI) |
 | `SUPABASE_URL` | Supabase → Project Settings → API → **Project URL** |
 | `SUPABASE_SERVICE_KEY` | Supabase → Project Settings → API → clave **service_role** (**no** la `anon`) |
 
-`ESCALATION_WEBHOOK_URL` y `CORS_ORIGINS` déjalas vacías por ahora.
+Las demás variables del `.env.example` (`ESCALATION_WEBHOOK_URL`, `CORS_ORIGINS`...) puedes omitirlas por ahora.
+
+> **No mezcles proveedores.** Los vectores de Gemini y de OpenAI no son comparables. Si ingeriste con uno y cambias al otro, ejecuta `truncate documents;` en el SQL Editor de Supabase y repite la ingesta. La tabla no cambia: los vectores siempre son de 1536 dimensiones.
 
 > **Seguridad:** la clave `service_role` da acceso total a tu base de datos. No la pegues en chats, capturas ni en GitHub. El archivo `.gitignore` ya evita que `.env` se suba, pero comprueba con `git status` que `.env` **no** aparece en la lista.
 > Si alguna clave se filtra, genérala de nuevo en su panel y actualiza `.env`.
@@ -197,7 +204,7 @@ Pedidos de ejemplo disponibles: `A1001` (en preparación), `A1002` (enviado, DHL
 INFO chat session=... scores=[0.82, 0.41, 0.38] relevantes=1
 ```
 
-Ahí ves el score real de cada fragmento. Solo los de **0.75 o más** cuentan como relevantes.
+Ahí ves el score real de cada fragmento. Solo los que superan el umbral cuentan como relevantes: **0.75** con OpenAI y **0.65** con Gemini (sus scores suelen ser algo más bajos). Si el bot dice "No tengo esa información" a algo que sí está en tu documento, mira el score y ajusta `SIMILARITY_THRESHOLD` en `.env` (por ejemplo `SIMILARITY_THRESHOLD=0.55`); si responde cosas que no debería, súbelo.
 
 ---
 
@@ -218,10 +225,13 @@ Para Slack: crea un *Incoming Webhook* en tu workspace y pega su URL. Se avisa *
 | Síntoma | Causa probable | Solución |
 |---|---|---|
 | `Falta la variable de entorno ...` | `.env` mal ubicado o con nombre erróneo | Debe llamarse exactamente `.env` y estar en la carpeta del proyecto |
-| El bot **siempre** dice "No tengo esa información" | Los scores quedan bajo 0.75 | Mira la línea `scores=[...]` en la terminal. Si los buenos están en 0.55–0.74, baja `SIMILARITY_THRESHOLD` en `main.py` (prueba 0.6) |
+| El bot **siempre** dice "No tengo esa información" | Los scores quedan bajo el umbral | Mira la línea `scores=[...]` en la terminal y baja `SIMILARITY_THRESHOLD` en `.env` (prueba 0.55) |
 | Todo se escala a humano, incluso un "hola" | Un saludo no tiene contexto = baja confianza | Pon `ESCALATE_ON_LOW_CONFIDENCE=false` en `.env` |
-| Error `401` / `invalid_api_key` | Clave de OpenAI mal copiada | Genera otra y revisa que no tenga espacios |
-| Error `429` / `insufficient_quota` | Sin saldo en OpenAI | Añade crédito en Billing |
+| Error `401` / `invalid_api_key` / `API key not valid` | Clave mal copiada, o `LLM_PROVIDER` no coincide con la clave que rellenaste | Revisa que no tenga espacios y que el proveedor sea el correcto |
+| Error `429` con **Gemini** | Límite de la capa gratuita (pocas peticiones por minuto y por día) | Espera un minuto y reintenta; no mandes ráfagas de mensajes. La ingesta reintenta sola |
+| Error `429` / `insufficient_quota` con **OpenAI** | Sin saldo | Añade crédito en Billing |
+| Error `404` / `model not found` con Gemini | Google renombró el modelo | Pon un modelo vigente en `CHAT_MODEL` (consulta aistudio.google.com) |
+| Los resultados son raros tras cambiar de proveedor | Quedaron vectores del proveedor anterior | `truncate documents;` en Supabase y vuelve a ingerir |
 | Widget responde "Ha ocurrido un problema..." | La API devolvió error (502) | Mira el traceback en la terminal del servidor |
 | `Could not find the function public.match_documents` | El SQL no se aplicó | Vuelve a ejecutar `sql/schema.sql` completo en Supabase |
 | `expected 1536 dimensions` | El modelo de embeddings no coincide con la tabla | No cambies `text-embedding-3-small` sin cambiar `vector(1536)` |
@@ -237,8 +247,10 @@ Para Slack: crea un *Incoming Webhook* en tu workspace y pega su URL. Se avisa *
 - **Los pedidos son datos de ejemplo** (`tools.py`). Antes de producción hay que conectarlos a tu sistema real **y verificar que el pedido pertenece al cliente que pregunta**; si no, cualquiera podría ver pedidos ajenos adivinando números.
 - **El historial vive en memoria**: se pierde al reiniciar el servidor y no sirve con varios procesos. Para producción habría que moverlo a Redis o Supabase.
 - **La API no tiene autenticación ni límite de peticiones**: cualquiera que conozca la URL puede gastar tu saldo de OpenAI. Añádelos antes de publicarla en internet.
-- **Costes:** cada mensaje genera una llamada de embedding (muy barata) y una a GPT-4o (la que más cuesta). Vigila el consumo en el panel de OpenAI.
-- **Aviso de privacidad:** las conversaciones y el contenido de tus documentos se envían a OpenAI.
+- **Costes (OpenAI):** cada mensaje genera una llamada de embedding (muy barata) y una a GPT-4o (la que más cuesta). Vigila el consumo en el panel de OpenAI.
+- **Capa gratuita de Gemini:** tiene límites bajos de peticiones y Google puede cambiarlos. Sirve para probar, no para atender clientes reales. Además, en la capa gratuita Google puede usar lo que envíes para mejorar sus productos: **no ingieras datos confidenciales ni de clientes**.
+- **Calidad:** las respuestas con Gemini pueden diferir de las de GPT-4o, sobre todo al usar herramientas (consulta de pedidos) y al obedecer la regla de "solo responde con el contexto". Pruébalo con los casos de la tabla del paso 7.
+- **Aviso de privacidad:** las conversaciones y el contenido de tus documentos se envían al proveedor de IA que elijas.
 
 ---
 

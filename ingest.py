@@ -9,7 +9,8 @@ Uso:
     python ingest.py docs/            # procesa recursivamente una carpeta
 
 Variables de entorno (ver .env.example):
-    OPENAI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY
+    SUPABASE_URL, SUPABASE_SERVICE_KEY y la clave del proveedor (OPENAI_API_KEY o
+    GEMINI_API_KEY según LLM_PROVIDER; ver llm_config.py)
 """
 from __future__ import annotations
 
@@ -26,10 +27,11 @@ from pypdf import PdfReader
 from supabase import Client, create_client
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from llm_config import EMBEDDING_DIM, EMBEDDING_MODEL, client_kwargs
+
 # --------------------------------------------------------------------------- #
 # Configuración
 # --------------------------------------------------------------------------- #
-EMBEDDING_MODEL = "text-embedding-3-small"  # 1536 dimensiones
 CHUNK_SIZE_WORDS = 400
 CHUNK_OVERLAP_WORDS = 50
 EMBED_BATCH_SIZE = 100    # textos por petición a OpenAI
@@ -103,7 +105,7 @@ def chunk_words(
 @retry(wait=wait_exponential(multiplier=1, min=2, max=30), stop=stop_after_attempt(5))
 def _embed_batch(client: OpenAI, batch: list[str]) -> list[list[float]]:
     """Una llamada a la API de embeddings, con reintentos ante rate limits/errores."""
-    response = client.embeddings.create(model=EMBEDDING_MODEL, input=batch)
+    response = client.embeddings.create(model=EMBEDDING_MODEL, input=batch, dimensions=EMBEDDING_DIM)
     # La API garantiza el orden, pero ordenamos por índice por seguridad.
     return [d.embedding for d in sorted(response.data, key=lambda d: d.index)]
 
@@ -184,7 +186,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_dotenv()
 
-    openai_client = OpenAI(api_key=require_env("OPENAI_API_KEY"))
+    openai_client = OpenAI(**client_kwargs())
     supabase = create_client(require_env("SUPABASE_URL"), require_env("SUPABASE_SERVICE_KEY"))
 
     total = 0
