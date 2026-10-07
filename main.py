@@ -39,6 +39,8 @@ from tools import TOOLS, ToolContext, execute_tool
 # --------------------------------------------------------------------------- #
 # Configuración
 # --------------------------------------------------------------------------- #
+load_dotenv()  # antes de leer las variables de abajo, que se evalúan al importar el módulo
+
 EMBEDDING_MODEL = "text-embedding-3-small"  # debe coincidir con ingest.py
 CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o")
 TOP_K = 3                      # fragmentos a recuperar
@@ -239,7 +241,6 @@ def require_env(name: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Crea los clientes una sola vez al arrancar y los comparte vía app.state."""
-    load_dotenv()
     app.state.openai = AsyncOpenAI(api_key=require_env("OPENAI_API_KEY"))
     app.state.supabase = create_client(
         require_env("SUPABASE_URL"), require_env("SUPABASE_SERVICE_KEY")
