@@ -167,3 +167,10 @@ def test_tool_loop_is_bounded(client):
     client.app.state.openai.script = [[tool_call("consultar_estado_pedido", order_id="A1001")]] * 10 + ["fin"]
     r = post(client)
     assert len(client.app.state.openai.calls) == main.MAX_TOOL_ROUNDS + 1
+
+
+# --- Fase 4: widget --------------------------------------------------------
+def test_widget_is_served_at_root(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    assert "/api/chat" in r.text and "escalation-banner" in r.text

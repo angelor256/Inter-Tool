@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Soporte — Chat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-50 font-sans text-slate-800">
+
+  <!-- Contenido de ejemplo de la página anfitriona (bórralo al integrar el widget) -->
+  <main class="mx-auto max-w-3xl px-6 py-20">
+    <h1 class="text-3xl font-bold tracking-tight">Tu tienda</h1>
+    <p class="mt-3 text-slate-600">Esta es una página de demostración. Abre el chat en la esquina inferior derecha.</p>
+  </main>
+
+  <!-- ===================== WIDGET DE CHAT ===================== -->
+  <div id="chat-widget" class="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-3 sm:bottom-6 sm:right-6">
+
+    <!-- Ventana del chat -->
+    <section id="chat-panel" inert aria-label="Chat de soporte"
+      class="pointer-events-none flex h-[36rem] max-h-[calc(100vh-6.5rem)] w-[22rem] max-w-[calc(100vw-2rem)] origin-bottom-right scale-95 flex-col overflow-hidden rounded-2xl bg-white opacity-0 shadow-2xl ring-1 ring-slate-900/10 transition duration-200 ease-out sm:w-96">
+
+      <!-- Cabecera -->
+      <header class="flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-3 text-white">
+        <div class="flex h-10 w-10 items-center justify-center rounded-full bg-white/20" aria-hidden="true">
+          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.9 9.9 0 01-4-.8L3 20l1.3-3.9A7.6 7.6 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <h2 class="truncate text-sm font-semibold">Asistente de soporte</h2>
+          <p class="flex items-center gap-1.5 text-xs text-indigo-100"><span class="h-2 w-2 rounded-full bg-emerald-400"></span>En línea</p>
+        </div>
+        <button id="chat-close" type="button" aria-label="Cerrar chat"
+          class="rounded-full p-1.5 text-white/80 transition hover:bg-white/15 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </header>
+
+      <!-- Banner de escalación (oculto hasta que la API responda escalated: true) -->
+      <div id="escalation-banner" role="status" hidden
+        class="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
+        <svg class="mt-0.5 h-4 w-4 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+        <p><strong class="font-semibold">Conversación transferida a un agente humano.</strong> Te contactará en breve; puedes seguir escribiendo aquí.</p>
+      </div>
+
+      <!-- Mensajes -->
+      <div id="chat-messages" role="log" aria-live="polite" class="flex-1 space-y-3 overflow-y-auto bg-slate-50 px-4 py-4"></div>
+
+      <!-- Entrada -->
+      <form id="chat-form" class="flex items-end gap-2 border-t border-slate-200 bg-white p-3">
+        <label for="chat-input" class="sr-only">Escribe tu mensaje</label>
+        <textarea id="chat-input" rows="1" maxlength="2000" placeholder="Escribe tu mensaje…"
+          class="max-h-28 min-h-[2.5rem] flex-1 resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"></textarea>
+        <button id="chat-send" type="submit" aria-label="Enviar mensaje"
+          class="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-indigo-600 text-white transition hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </form>
+    </section>
+
+    <!-- Botón flotante -->
+    <button id="chat-toggle" type="button" aria-label="Abrir chat" aria-expanded="false" aria-controls="chat-panel"
+      class="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/30 transition hover:scale-105 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-300">
+      <svg id="icon-open" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.9 9.9 0 01-4-.8L3 20l1.3-3.9A7.6 7.6 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      <svg id="icon-close" class="hidden h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+    </button>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      // Si abres el archivo con file://, apunta al backend local; si lo sirve FastAPI, usa la misma origen.
+      // Para otra URL, define window.CHAT_API_URL antes de este script.
+      const API_URL = window.CHAT_API_URL ||
+        (location.protocol === "file:" ? "http://localhost:8000" : "") + "/api/chat";
+      const REQUEST_TIMEOUT_MS = 60000;
+      const WELCOME = "¡Hola! Soy el asistente de soporte. ¿En qué puedo ayudarte?";
+      const ERROR_TEXT = "Ha ocurrido un problema al contactar con el servidor. Inténtalo de nuevo en unos instantes.";
+
+      const $ = (id) => document.getElementById(id);
+      const panel = $("chat-panel"), toggle = $("chat-toggle"), closeBtn = $("chat-close");
+      const messages = $("chat-messages"), form = $("chat-form");
+      const input = $("chat-input"), sendBtn = $("chat-send"), banner = $("escalation-banner");
+
+      // ---- Sesión: un id por pestaña (sessionStorage puede no estar disponible) ----
+      const newId = () => (crypto.randomUUID ? crypto.randomUUID()
+        : "s-" + Date.now().toString(36) + Math.random().toString(36).slice(2));
+      let sessionId;
+      try {
+        sessionId = sessionStorage.getItem("chat_session_id");
+        if (!sessionId) { sessionId = newId(); sessionStorage.setItem("chat_session_id", sessionId); }
+      } catch { sessionId = newId(); }
+
+      let isOpen = false, isLoading = false, typingEl = null, welcomed = false;
+
+      // ---- Abrir / cerrar ----
+      const OPEN = ["opacity-100", "scale-100", "pointer-events-auto"];
+      const CLOSED = ["opacity-0", "scale-95", "pointer-events-none"];
+
+      function setOpen(open) {
+        isOpen = open;
+        panel.classList.remove(...(open ? CLOSED : OPEN));
+        panel.classList.add(...(open ? OPEN : CLOSED));
+        panel.toggleAttribute("inert", !open);
+        toggle.setAttribute("aria-expanded", String(open));
+        toggle.setAttribute("aria-label", open ? "Cerrar chat" : "Abrir chat");
+        $("icon-open").classList.toggle("hidden", open);
+        $("icon-close").classList.toggle("hidden", !open);
+        if (open) {
+          if (!welcomed) { welcomed = true; addMessage("bot", WELCOME); }
+          input.focus();
+        } else {
+          toggle.focus();
+        }
+      }
+      toggle.addEventListener("click", () => setOpen(!isOpen));
+      closeBtn.addEventListener("click", () => setOpen(false));
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape" && isOpen) setOpen(false); });
+
+      // ---- Burbujas (siempre textContent: nunca inyectamos HTML del servidor) ----
+      function scrollToBottom() { messages.scrollTop = messages.scrollHeight; }
+
+      function addMessage(role, text, { error = false } = {}) {
+        const row = document.createElement("div");
+        row.className = "flex " + (role === "user" ? "justify-end" : "justify-start");
+        const bubble = document.createElement("div");
+        bubble.className = "max-w-[85%] whitespace-pre-wrap break-words px-3.5 py-2 text-sm leading-relaxed shadow-sm " +
+          (role === "user"
+            ? "rounded-2xl rounded-br-md bg-indigo-600 text-white"
+            : error
+              ? "rounded-2xl rounded-bl-md border border-red-200 bg-red-50 text-red-800"
+              : "rounded-2xl rounded-bl-md border border-slate-200 bg-white text-slate-800");
+        bubble.textContent = text;
+        row.appendChild(bubble);
+        messages.appendChild(row);
+        scrollToBottom();
+      }
+
+      // ---- Indicador "escribiendo..." ----
+      function showTyping() {
+        typingEl = document.createElement("div");
+        typingEl.className = "flex justify-start";
+        typingEl.setAttribute("aria-label", "El asistente está escribiendo");
+        const bubble = document.createElement("div");
+        bubble.className = "flex items-center gap-1 rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 shadow-sm";
+        for (let i = 0; i < 3; i++) {
+          const dot = document.createElement("span");
+          dot.className = "h-2 w-2 animate-bounce rounded-full bg-slate-400";
+          dot.style.animationDelay = i * 150 + "ms";
+          bubble.appendChild(dot);
+        }
+        typingEl.appendChild(bubble);
+        messages.appendChild(typingEl);
+        scrollToBottom();
+      }
+      function hideTyping() { typingEl?.remove(); typingEl = null; }
+
+      // ---- Envío ----
+      function setLoading(loading) {
+        isLoading = loading;
+        sendBtn.disabled = loading;
+        input.setAttribute("aria-busy", String(loading));
+      }
+
+      async function sendMessage(text) {
+        addMessage("user", text);
+        setLoading(true);
+        showTyping();
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        try {
+          const res = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: text, session_id: sessionId }),
+            signal: controller.signal,
+          });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const data = await res.json();
+          hideTyping();
+          addMessage("bot", data.answer);
+          if (data.escalated) banner.hidden = false;
+        } catch (err) {
+          console.error("Error en el chat:", err);
+          hideTyping();
+          addMessage("bot", ERROR_TEXT, { error: true });
+        } finally {
+          clearTimeout(timer);
+          setLoading(false);
+          input.focus();
+        }
+      }
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text || isLoading) return;
+        input.value = "";
+        autoResize();
+        sendMessage(text);
+      });
+
+      // Enter envía; Shift+Enter inserta salto de línea.
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          form.requestSubmit();
+        }
+      });
+
+      function autoResize() {
+        input.style.height = "auto";
+        input.style.height = Math.min(input.scrollHeight, 112) + "px";
+      }
+      input.addEventListener("input", autoResize);
+    })();
+  </script>
+</body>
+</html>
